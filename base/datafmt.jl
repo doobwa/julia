@@ -158,6 +158,30 @@ end
 csvread(io)          = dlmread(io, ',')
 csvread(io, T::Type) = dlmread(io, ',', T)
 
+# Read only a chosen subset of columns
+function _jl_dlmread(a, io, dlm, nr, nc, row, eol, chosen)
+    for i=1:nr
+        for j = 1:length(chosen)
+            a[i,j] = row[chosen[j]]
+        end
+        if i < nr
+            row = _jl_dlm_readrow(io, dlm, eol)
+        end
+    end
+    return a
+end
+
+function dlmread(fname::String, dlm::String, eol::Char, chosen::Array{Int64})
+    (io, nr, nc, row) = _jl_dlmread_setup(fname, dlm, eol)
+    a = Array(String, nr, length(chosen))
+    _jl_dlmread(a, io, dlm, nr, nc, row, eol, chosen)
+    close(io)
+    return a
+end
+
+dlmread(fname::String, dlm::String, chosen::Array{Int64}) = dlmread(fname, dlm, '\n', chosen)
+
+
 # todo: keyword argument for # of digits to print
 function dlmwrite(io, a::Matrix, dlm::Char)
     nr, nc = size(a)
