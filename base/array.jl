@@ -149,14 +149,21 @@ end
 
 function linspace(start::Real, stop::Real, n::Integer)
     (start, stop) = promote(start, stop)
-    a = Array(typeof(start), int(n))
+    T = typeof(start)
+    a = Array(T, int(n))
     if n == 1
         a[1] = start
         return a
     end
     step = (stop-start)/(n-1)
-    for i=1:n
-        a[i] = start+(i-1)*step
+    if isa(start,Integer)
+        for i=1:n
+            a[i] = iround(T,start+(i-1)*step)
+        end
+    else
+        for i=1:n
+            a[i] = start+(i-1)*step
+        end
     end
     a
 end
@@ -178,30 +185,26 @@ function check_bounds(sz::Int, I::Integer)
     if I < 1 || I > sz
         throw(BoundsError())
     end
-    return nothing
 end
 
 function check_bounds(sz::Int, I::AbstractVector{Bool})
-    if length(I) != sz
+    if length(I) > sz
         throw(BoundsError())
     end
-    return nothing
 end
 
-function check_bounds(sz::Int, I::Union(Range1{Int}, Range{Int}))
-    if first(I) < 1 || last(I) > sz
+function check_bounds{T<:Integer}(sz::Int, I::Ranges{T})
+    if min(I) < 1 || max(I) > sz
         throw(BoundsError())
     end
-    return nothing
 end
 
 function check_bounds{T <: Integer}(sz::Int, I::AbstractVector{T})
-    for i = I
+    for i in I
         if i < 1 || i > sz
             throw(BoundsError())
         end
     end
-    return nothing
 end
 
 function check_bounds(A::Array, I::Array{Bool})
@@ -210,9 +213,7 @@ function check_bounds(A::Array, I::Array{Bool})
     end
 end
 
-function check_bounds(A::AbstractVector, I::Indices)
-    check_bounds(length(A), I)
-end
+check_bounds(A::AbstractVector, I::Indices) = check_bounds(length(A), I)
 
 function check_bounds(A::Matrix, I::Indices, J::Indices)
     check_bounds(size(A,1), I)
@@ -229,14 +230,16 @@ function check_bounds(A::Array, I::Indices, J::Indices)
 end
 
 function check_bounds(A::Array, I::Indices...)
-    for dim = 1:length(I)
-        sz = size(A,dim)
-        if dim == length(I)
-            for i = dim+1:ndims(A)
-                sz *= size(A,i)     # TODO: sync. with decision on issue #1030
-            end
+    n = length(I)
+    if n > 0
+        for dim = 1:(n-1)
+            check_bounds(size(A,dim), I[dim])
         end
-        check_bounds(sz, I[dim])
+        sz = size(A,n)
+        for i = n+1:ndims(A)
+            sz *= size(A,i)     # TODO: sync. with decision on issue #1030
+        end
+        check_bounds(sz, I[n])
     end
 end
 
@@ -271,13 +274,11 @@ end
 
 # Fast copy using copy_to for Range1
 function ref(A::Array, I::Range1{Int})
-    check_bounds(A, I)
     X = similar(A, length(I))
-    copy_to_unsafe(X, 1, A, first(I), length(I))
+    copy_to(X, 1, A, first(I), length(I))
     return X
 end
 
-# @Jeff: in all that follows, change A[i] to arrayref_unsafe(A, i)??
 # note: this is also useful for Ranges
 function ref{T<:Integer}(A::Array, I::AbstractVector{T})
     check_bounds(A, I)
@@ -292,7 +293,7 @@ end
 function ref(A::Array, I::Range1{Int}, j::Int)
     check_bounds(A, I, j)
     X = similar(A,length(I))
-    copy_to_unsafe(X, 1, A, (j-1)*size(A,1) + 1, length(I))
+    copy_to_unsafe(X, 1, A, (j-1)*size(A,1) + first(I), length(I))
     return X
 end
 function ref(A::Array, I::Range1{Int}, J::Range1{Int})
@@ -320,14 +321,9 @@ function ref(A::Array, I::Range1{Int}, J::AbstractVector{Int})
     return X
 end
 
-function ref{T<:Integer}(A::Array, I::AbstractVector{T}, j::Integer)
-    check_bounds(A, I, j)
-    return [ A[i + (j-1)*size(A,1)] for i=I ]
-end
-function ref{T<:Integer}(A::Array, I::Integer, J::AbstractVector{T})
-    check_bounds(A, I, J)
-    return [ A[i,j] for i=I,j=J ]
-end
+ref{T<:Integer}(A::Array, I::AbstractVector{T}, j::Integer) = [ A[i,j] for i=I ]
+ref{T<:Integer}(A::Array, I::Integer, J::AbstractVector{T}) = [ A[i,j] for i=I,j=J ]
+
 # This next is a 2d specialization of the algorithm used for general
 # multidimensional indexing
 function ref{T<:Integer}(A::Array, I::AbstractVector{T}, J::AbstractVector{T})
@@ -384,7 +380,6 @@ ref(A::Vector, I::AbstractArray{Bool}) = _jl_ref_bool_1d(A, I)
 ref(A::Array, I::AbstractVector{Bool}) = _jl_ref_bool_1d(A, I)
 ref(A::Array, I::AbstractArray{Bool}) = _jl_ref_bool_1d(A, I)
 
-
 # @Jeff: more efficient is to check the bool vector, and then do
 # indexing without checking. Turn off checking for the second stage?
 ref(A::Matrix, I::Integer, J::AbstractVector{Bool}) = A[I,find(J)]
@@ -433,7 +428,6 @@ end
 # end fixme 996
 
 function assign{T<:Integer}(A::Array, x, I::AbstractVector{T})
-    check_bounds(A, I)
     for i in I
         A[i] = x
     end
@@ -441,14 +435,12 @@ function assign{T<:Integer}(A::Array, x, I::AbstractVector{T})
 end
 
 function assign{T}(A::Array{T}, X::Array{T}, I::Range1{Int})
-    check_bounds(A, I)
     if length(X) != length(I); error("argument dimensions must match"); end
-    copy_to_unsafe(A, first(I), X, 1, length(I))
+    copy_to(A, first(I), X, 1, length(I))
     return A
 end
 
 function assign{T<:Integer}(A::Array, X::AbstractArray, I::AbstractVector{T})
-    check_bounds(A, I)
     if length(X) != length(I); error("argument dimensions must match"); end
     count = 1
     for i in I
