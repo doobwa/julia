@@ -7,7 +7,7 @@
     memhash32;
     memhash32_seed;
     jl_symbol_name;
-    jl_uid;
+    jl_object_id;
     jl_strtod;
     jl_strtof;
     clock_now;
@@ -43,7 +43,9 @@
     jl_enable_color;
     jl_takebuf_array;
     jl_takebuf_string;
+    jl_takebuf_raw;
     jl_readuntil;
+    jl_free2;
     jl_cpu_cores;
     jl_hrtime;
     jl_cstr_to_string;
@@ -88,7 +90,6 @@
     jl_stderr_obj;
     ios_fd;
     ios_mem;
-    jl_ios_mem;
     jl_boundp;
     jl_get_root_symbol;
     julia_free;
@@ -97,6 +98,7 @@
     ios_pututf8;
     ios_getc;
     ios_getutf8;
+    ios_peekutf8;
     jl_getutf8;
     u8_isvalid;
     u8_strwidth;
@@ -160,6 +162,7 @@
     jl_load;
     jl_load_;
     jl_load_file_string;
+    jl_expand;
     jl_dlsym;
     jl_load_dynamic_library;
     jl_stdin_callback;
@@ -178,6 +181,9 @@
     jl_get_current_task;
     jl_enter_handler;
     jl_exception_in_transit;
+    jl_errorexception_type;
+    jl_loaderror_type;
+    jl_backtrace_type;
     jl_show;
     jl_show_any;
     jl_print_symbol;
@@ -186,7 +192,9 @@
     jl_symbol;
     jl_core_module;
     jl_base_module;
+    jl_main_module;
     jl_current_module;
+    jl_module_export;
     jl_get_global;
     jl_set_global;
     jl_set_const;
@@ -213,6 +221,7 @@
     jl_defer_signal;
     jl_register_toplevel_eh;
     jl_dump_function;
+    uv_exepath;
   local:
     *;
 };

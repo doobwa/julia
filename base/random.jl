@@ -30,7 +30,8 @@ end
 # macros to generate random arrays
 
 macro _jl_rand_matrix_builder(T, f)
-    f! = symbol("$(f)!")
+    f! = esc(symbol("$(f)!"))
+    f = esc(f)
     quote
         function ($f!)(A::Array{$T})
             for i = 1:numel(A)
@@ -44,7 +45,8 @@ macro _jl_rand_matrix_builder(T, f)
 end
 
 macro _jl_rand_matrix_builder_1arg(T, f)
-    f! = symbol("$(f)!")
+    f! = esc(symbol("$(f)!"))
+    f = esc(f)
     quote
         function ($f!)(arg, A::Array{$T})
             for i = 1:numel(A)
@@ -125,7 +127,7 @@ randi(::Type{Uint128}) = uint128(randi(Uint64))<<64 | randi(Uint64)
 
 randi(::Type{Int32})   = int32(randi(Uint32)) & typemax(Int32)
 randi(::Type{Int64})   = int64(randi(Uint64)) & typemax(Int64)
-randi(::Type{Int128})  = int128(randi(Uint128)) & typemax(Uint128)
+randi(::Type{Int128})  = int128(randi(Uint128)) & typemax(Int128)
 
 randi() = randi(Int)
 

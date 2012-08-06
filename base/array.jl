@@ -69,10 +69,6 @@ end
 
 ## Constructors ##
 
-_jl_comprehension_zeros{T,n}(oneresult::AbstractArray{T,n}, dims...) = Array(T, dims...)
-_jl_comprehension_zeros{T}(oneresult::T, dims...) = Array(T, dims...)
-_jl_comprehension_zeros(oneresult::(), dims...) = Array(None, dims...)
-
 similar(a::Array, T, dims::Dims)      = Array(T, dims)
 similar{T}(a::Array{T,1})             = Array(T, size(a,1))
 similar{T}(a::Array{T,2})             = Array(T, size(a,1), size(a,2))
@@ -397,19 +393,19 @@ assign{T}(A::Array{T}, x, i::Integer) = arrayset(A,int(i),convert(T, x))
 assign{T}(A::Array{T,0}, x) = arrayset(A,1,convert(T, x))
 
 assign(A::Array, x, i0::Integer, i1::Integer) =
-    A[i0 + size(A,1)*(i1-1)] = x
+    assign(A, x, i0 + size(A,1)*(i1-1))
 assign(A::Array, x::AbstractArray, i0::Integer, i1::Integer) =
-    A[i0 + size(A,1)*(i1-1)] = x
+    assign(A, x, i0 + size(A,1)*(i1-1))
 
 assign(A::Array, x, i0::Integer, i1::Integer, i2::Integer) =
-    A[i0 + size(A,1)*((i1-1) + size(A,2)*(i2-1))] = x
+    assign(A, x, i0 + size(A,1)*((i1-1) + size(A,2)*(i2-1)))
 assign(A::Array, x::AbstractArray, i0::Integer, i1::Integer, i2::Integer) =
-    A[i0 + size(A,1)*((i1-1) + size(A,2)*(i2-1))] = x
+    assign(A, x, i0 + size(A,1)*((i1-1) + size(A,2)*(i2-1)))
 
 assign(A::Array, x, i0::Integer, i1::Integer, i2::Integer, i3::Integer) =
-    A[i0 + size(A,1)*((i1-1) + size(A,2)*((i2-1) + size(A,3)*(i3-1)))] = x
+    assign(A, x, i0 + size(A,1)*((i1-1) + size(A,2)*((i2-1) + size(A,3)*(i3-1))))
 assign(A::Array, x::AbstractArray, i0::Integer, i1::Integer, i2::Integer, i3::Integer) =
-    A[i0 + size(A,1)*((i1-1) + size(A,2)*((i2-1) + size(A,3)*(i3-1)))] = x
+    assign(A, x, i0 + size(A,1)*((i1-1) + size(A,2)*((i2-1) + size(A,3)*(i3-1))))
 
 assign(A::Array, x, I0::Integer, I::Integer...) = assign_scalarND(A,x,I0,I...)
 assign(A::Array, x::AbstractArray, I0::Integer, I::Integer...) =
@@ -664,20 +660,20 @@ assign(A::Array, X::AbstractArray, I::AbstractArray{Bool}) = _jl_assign_bool_vec
 assign(A::Array, x, I::AbstractVector{Bool}) = _jl_assign_bool_scalar_1d(A, x, I)
 assign(A::Array, x, I::AbstractArray{Bool}) = _jl_assign_bool_scalar_1d(A, x, I)
 
-assign(A::Matrix, x::AbstractArray, I::Integer, J::AbstractVector{Bool}) = (A[I,find(J)]=x)
-assign(A::Matrix, x, I::Integer, J::AbstractVector{Bool}) = (A[I,find(J)]=x)
+assign(A::Matrix, x::AbstractArray, I::Integer, J::AbstractVector{Bool}) = assign(A, x, I,find(J))
+assign(A::Matrix, x, I::Integer, J::AbstractVector{Bool}) = assign(A, x, I,find(J))
 
-assign(A::Matrix, x::AbstractArray, I::AbstractVector{Bool}, J::Integer) = (A[find(I),J]=x)
-assign(A::Matrix, x, I::AbstractVector{Bool}, J::Integer) = (A[find(I),J]=x)
+assign(A::Matrix, x::AbstractArray, I::AbstractVector{Bool}, J::Integer) = assign(A, x, find(I),J)
+assign(A::Matrix, x, I::AbstractVector{Bool}, J::Integer) = assign(A,x,find(I),J)
 
-assign(A::Matrix, x::AbstractArray, I::AbstractVector{Bool}, J::AbstractVector{Bool}) = (A[find(I),find(J)]=x)
-assign(A::Matrix, x, I::AbstractVector{Bool}, J::AbstractVector{Bool}) = (A[find(I),find(J)]=x)
+assign(A::Matrix, x::AbstractArray, I::AbstractVector{Bool}, J::AbstractVector{Bool}) = assign(A, x, find(I),find(J))
+assign(A::Matrix, x, I::AbstractVector{Bool}, J::AbstractVector{Bool}) = assign(A, x, find(I),find(J))
 
-assign{T<:Integer}(A::Matrix, x::AbstractArray, I::AbstractVector{T}, J::AbstractVector{Bool}) = (A[I,find(J)]=x)
-assign{T<:Integer}(A::Matrix, x, I::AbstractVector{T}, J::AbstractVector{Bool}) = (A[I,find(J)]=x)
+assign{T<:Integer}(A::Matrix, x::AbstractArray, I::AbstractVector{T}, J::AbstractVector{Bool}) = assign(A, x, I,find(J))
+assign{T<:Integer}(A::Matrix, x, I::AbstractVector{T}, J::AbstractVector{Bool}) = assign(A, x, I,find(J))
 
-assign{T<:Integer}(A::Matrix, x::AbstractArray, I::AbstractVector{Bool}, J::AbstractVector{T}) = (A[find(I),J]=x)
-assign{T<:Integer}(A::Matrix, x, I::AbstractVector{Bool}, J::AbstractVector{T}) = (A[find(I),J]=x)
+assign{T<:Integer}(A::Matrix, x::AbstractArray, I::AbstractVector{Bool}, J::AbstractVector{T}) = assign(A, x, find(I),J)
+assign{T<:Integer}(A::Matrix, x, I::AbstractVector{Bool}, J::AbstractVector{T}) = assign(A, x, find(I),J)
 
 ## Dequeue functionality ##
 
@@ -1003,6 +999,13 @@ for (f,scalarf) in ((:(.==),:(==)), (:.<, :<), (:.!=,:!=), (:.<=,:<=))
         ($f)(A::AbstractArray, B) =
             reshape([ ($scalarf)(A[i], B) for i=1:length(A)], size(A))
     end
+end
+
+# use memcmp for cmp on byte arrays
+function cmp(a::Array{Uint8,1}, b::Array{Uint8,1})
+    c = ccall(:memcmp, Int32, (Ptr{Uint8}, Ptr{Uint8}, Uint),
+              a, b, min(length(a),length(b)))
+    c < 0 ? -1 : c > 0 ? +1 : cmp(length(a),length(b))
 end
 
 ## data movement ##
@@ -1484,13 +1487,13 @@ end
 
 
 ## 1 argument
-function map_to(dest::StridedArray, f, A::StridedArray)
+function map_to(f, dest::StridedArray, A::StridedArray)
     for i=1:numel(A)
         dest[i] = f(A[i])
     end
     return dest
 end
-function map_to2(first, dest::StridedArray, f, A::StridedArray)
+function map_to2(f, first, dest::StridedArray, A::StridedArray)
     dest[1] = first
     for i=2:numel(A)
         dest[i] = f(A[i])
@@ -1502,17 +1505,17 @@ function map(f, A::StridedArray)
     if isempty(A); return A; end
     first = f(A[1])
     dest = similar(A, typeof(first))
-    return map_to2(first, dest, f, A)
+    return map_to2(f, first, dest, A)
 end
 
 ## 2 argument
-function map_to(dest::StridedArray, f, A::StridedArray, B::StridedArray)
+function map_to(f, dest::StridedArray, A::StridedArray, B::StridedArray)
     for i=1:numel(A)
         dest[i] = f(A[i], B[i])
     end
     return dest
 end
-function map_to2(first, dest::StridedArray, f,
+function map_to2(f, first, dest::StridedArray,
                  A::StridedArray, B::StridedArray)
     dest[1] = first
     for i=2:numel(A)
@@ -1528,16 +1531,16 @@ function map(f, A::StridedArray, B::StridedArray)
     end
     first = f(A[1], B[1])
     dest = similar(A, typeof(first), shp)
-    return map_to2(first, dest, f, A, B)
+    return map_to2(f, first, dest, A, B)
 end
 
-function map_to(dest::StridedArray, f, A::StridedArray, B::Number)
+function map_to(f, dest::StridedArray, A::StridedArray, B::Number)
     for i=1:numel(A)
         dest[i] = f(A[i], B)
     end
     return dest
 end
-function map_to2(first, dest::StridedArray, f, A::StridedArray, B::Number)
+function map_to2(f, first, dest::StridedArray, A::StridedArray, B::Number)
     dest[1] = first
     for i=2:numel(A)
         dest[i] = f(A[i], B)
@@ -1549,16 +1552,16 @@ function map(f, A::StridedArray, B::Number)
     if isempty(A); return A; end
     first = f(A[1], B)
     dest = similar(A, typeof(first))
-    return map_to2(first, dest, f, A, B)
+    return map_to2(f, first, dest, A, B)
 end
 
-function map_to(dest::StridedArray, f, A::Number, B::StridedArray)
+function map_to(f, dest::StridedArray, A::Number, B::StridedArray)
     for i=1:numel(B)
         dest[i] = f(A, B[i])
     end
     return dest
 end
-function map_to2(first, dest::StridedArray, f, A::Number, B::StridedArray)
+function map_to2(f, first, dest::StridedArray, A::Number, B::StridedArray)
     dest[1] = first
     for i=2:numel(B)
         dest[i] = f(A, B[i])
@@ -1570,11 +1573,11 @@ function map(f, A::Number, B::StridedArray)
     if isempty(A); return A; end
     first = f(A, B[1])
     dest = similar(B, typeof(first))
-    return map_to2(first, dest, f, A, B)
+    return map_to2(f, first, dest, A, B)
 end
 
 ## N argument
-function map_to(dest::StridedArray, f, As::StridedArray...)
+function map_to(f, dest::StridedArray, As::StridedArray...)
     n = numel(As[1])
     i = 1
     ith = a->a[i]
@@ -1583,7 +1586,7 @@ function map_to(dest::StridedArray, f, As::StridedArray...)
     end
     return dest
 end
-function map_to2(first, dest::StridedArray, f, As::StridedArray...)
+function map_to2(f, first, dest::StridedArray, As::StridedArray...)
     n = numel(As[1])
     i = 1
     ith = a->a[i]
@@ -1601,7 +1604,7 @@ function map(f, As::StridedArray...)
     end
     first = f(map(a->a[1], As)...)
     dest = similar(As[1], typeof(first), shape)
-    return map_to2(first, dest, f, As...)
+    return map_to2(f, first, dest, As...)
 end
 
 ## Filter ##

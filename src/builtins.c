@@ -257,11 +257,13 @@ JL_CALLABLE(jl_f_top_eval)
 {
     if (nargs == 1) {
         jl_expr_t *ex = (jl_expr_t*)args[0];
+        /*
         if (jl_is_expr(ex) && (ex->head == export_sym ||
                                ex->head == import_sym ||
                                ex->head == importall_sym)) {
             jl_errorf("unsupported or misplaced expression %s", ex->head->name);
         }
+        */
         return jl_toplevel_eval((jl_value_t*)ex);
     }
     if (nargs != 2) {
@@ -272,7 +274,19 @@ JL_CALLABLE(jl_f_top_eval)
     if (jl_is_symbol(args[1])) {
         return jl_eval_global_var(m, (jl_sym_t*)args[1]);
     }
-    return jl_interpret_toplevel_expr_in(m, args[1], NULL, 0);
+    jl_value_t *v=NULL;
+    jl_module_t *last_m = jl_current_module;
+    JL_TRY {
+        jl_current_module = m;
+        v = jl_toplevel_eval(args[1]);
+    }
+    JL_CATCH {
+        jl_current_module = last_m;
+        jl_raise(jl_exception_in_transit);
+    }
+    jl_current_module = last_m;
+    assert(v);
+    return v;
 }
 
 JL_CALLABLE(jl_f_isbound)
@@ -537,6 +551,12 @@ void jl_show(jl_value_t *stream, jl_value_t *v)
         if (jl_show_gf == NULL) {
             jl_show_gf = (jl_function_t*)jl_get_global(jl_base_module, jl_symbol("show"));
         }
+        if (jl_show_gf==NULL || stream==NULL) {
+            JL_PRINTF(JL_STDERR, "could not show value of type %s",
+                      jl_is_tuple(v) ? "Tuple" : 
+                      ((jl_tag_type_t*)jl_typeof(v))->name->name->name);
+            return;
+        }
         jl_value_t *args[2] = {stream,v};
         jl_apply(jl_show_gf, args, 2);
     }
@@ -685,7 +705,7 @@ JL_CALLABLE(jl_f_typevar)
     JL_TYPECHK(typevar, symbol, args[0]);
     if (jl_boundp(jl_current_module, (jl_sym_t*)args[0]) &&
         jl_is_type(jl_get_global(jl_current_module, (jl_sym_t*)args[0]))) {
-        ios_printf(ios_stderr, "Warning: type parameter name %s shadows an identifier\n", ((jl_sym_t*)args[0])->name);
+        ios_printf(JL_STDERR, "Warning: type parameter name %s shadows an identifier.\n", ((jl_sym_t*)args[0])->name);
     }
     jl_value_t *lb = (jl_value_t*)jl_bottom_type;
     jl_value_t *ub = (jl_value_t*)jl_any_type;
@@ -786,7 +806,7 @@ JL_CALLABLE(jl_f_invoke)
 #define hash64(a)   int64to32hash(a)
 #endif
 
-DLLEXPORT uptrint_t jl_uid(jl_value_t *v)
+DLLEXPORT uptrint_t jl_object_id(jl_value_t *v)
 {
     if (jl_is_symbol(v))
         return ((jl_sym_t*)v)->hash;
@@ -817,7 +837,7 @@ DLLEXPORT uptrint_t jl_uid(jl_value_t *v)
     uptrint_t h = 0;
     size_t l = jl_tuple_len(v);
     for(size_t i = 0; i < l; i++) {
-        uptrint_t u = jl_uid(jl_tupleref(v,i));
+        uptrint_t u = jl_object_id(jl_tupleref(v,i));
         h = bitmix(h, u);
     }
     return h;
@@ -869,8 +889,6 @@ void jl_init_primitives(void)
     add_builtin_func("arraysize", jl_f_arraysize);
 
     add_builtin_func("apply_type", jl_f_instantiate_type);
-    add_builtin_func("typevar", jl_f_typevar);
-    add_builtin_func("new_type_constructor", jl_f_new_type_constructor);
 
     // builtin types
     add_builtin("Any", (jl_value_t*)jl_any_type);

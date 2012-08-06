@@ -64,13 +64,16 @@ function _jl_eval_user_input(ast::ANY, show_value)
                     if _jl_have_color
                         print(_jl_answer_color())
                     end
-                    repl_show(value)
+                    try repl_show(value)
+                    catch err
+                        throw(ShowError(value,err))
+                    end
                     println()
                 end
             end
             break
-        catch e
-            iserr, lasterr = true, e
+        catch err
+            iserr, lasterr = true, err
         end
     end
     println()
@@ -150,7 +153,7 @@ function process_options(args::Array{Any,1})
             eval(parse_input_line(args[i]))
         elseif args[i]=="-L"
             i+=1
-            include(args[i])
+            load(args[i])
         elseif args[i]=="-p"
             i+=1
             np = int32(args[i])
@@ -169,7 +172,7 @@ function process_options(args::Array{Any,1})
             repl = false
             # remove julia's arguments
             ARGS = args[i+1:end]
-            include(args[i])
+            load(args[i])
             break
         else
             error("unknown option: ", args[i])
@@ -186,6 +189,17 @@ _jl_is_interactive = false
 isinteractive() = (_jl_is_interactive::Bool)
 
 function _start()
+    # set up standard streams
+    global const stdout_stream = make_stdout_stream()
+    global const stdin_stream = make_stdin_stream()
+    global const stderr_stream = make_stderr_stream()
+    global OUTPUT_STREAM = stdout_stream
+
+    # set CPU core count
+    global const CPU_CORES = ccall(:jl_cpu_cores, Int32, ())
+
+    _jl_librandom_init()
+
     atexit(()->flush(stdout_stream))
     try
         ccall(:jl_register_toplevel_eh, Void, ())
@@ -204,8 +218,7 @@ function _start()
             global PGRP = ProcessGroup(0, {}, {})
         end
 
-        global const VARIABLES = {}
-        global const LOAD_PATH = String["", "$JULIA_HOME/../lib/julia/extras/"]
+        global const LOAD_PATH = String["", "$JULIA_HOME/../lib/julia/extras/", "$JULIA_HOME/../lib/julia/ui/"]
 
         # Load customized startup
         try include(strcat(cwd(),"/startup.jl")) end

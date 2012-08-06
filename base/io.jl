@@ -87,12 +87,12 @@ end
 open(fname::String) = open(fname, true, false, false, false, false)
 
 function open(fname::String, mode::String)
-    mode == "r"  ? open(fname, true,  false, false, false, false) :
-    mode == "r+" ? open(fname, true,  true , false, false, false) :
+    mode == "r"  ? open(fname, true , false, false, false, false) :
+    mode == "r+" ? open(fname, true , true , false, false, false) :
     mode == "w"  ? open(fname, false, true , true , true , false) :
-    mode == "w+" ? open(fname, true,  true , true , true , false) :
+    mode == "w+" ? open(fname, true , true , true , true , false) :
     mode == "a"  ? open(fname, false, true , true , false, true ) :
-    mode == "a+" ? open(fname, true,  true , true , false, true ) :
+    mode == "a+" ? open(fname, true , true , true , false, true ) :
     error("invalid open mode: ", mode)
 end
 
@@ -108,7 +108,7 @@ end
 
 function memio(x::Integer, finalize::Bool)
     s = IOStream("<memio>", finalize)
-    ccall(:jl_ios_mem, Ptr{Void}, (Ptr{Uint8}, Uint), s.ios, x)
+    ccall(:ios_mem, Ptr{Void}, (Ptr{Uint8}, Uint), s.ios, x)
     return s
 end
 memio(x::Integer) = memio(x, true)
@@ -133,7 +133,6 @@ else
 end
 
 ## binary I/O ##
-
 write(x) = write(OUTPUT_STREAM::IOStream, x)
 write(s, x::Uint8) = error(typeof(s)," does not support byte I/O")
 
@@ -251,6 +250,15 @@ read(s::IOStream, ::Type{Char}) = ccall(:jl_getutf8, Char, (Ptr{Void},), s.ios)
 
 takebuf_string(s::IOStream) =
     ccall(:jl_takebuf_string, ByteString, (Ptr{Void},), s.ios)
+
+takebuf_array(s::IOStream) =
+    ccall(:jl_takebuf_array, Vector{Uint8}, (Ptr{Void},), s.ios)
+
+function takebuf_raw(s::IOStream)
+    sz = position(s)
+    buf = ccall(:jl_takebuf_raw, Ptr{Uint8}, (Ptr{Void},), s.ios)
+    return buf, sz
+end
 
 function sprint(size::Integer, f::Function, args...)
     s = memio(size, false)
@@ -393,5 +401,26 @@ begin
         ccall(:select, Int32,
               (Int32, Ptr{Void}, Ptr{Void}, Ptr{Void}, Ptr{Void}),
               readfds.nfds, readfds.data, C_NULL, C_NULL, tout)
+    end
+end
+
+## Character streams ##
+_wstmp = Array(Char, 1)
+function eatwspace(s::IOStream)
+    status = ccall(:ios_peekutf8, Int32, (Ptr{Void}, Ptr{Uint32}), s.ios, _wstmp)
+    while status > 0 && iswspace(_wstmp[1])
+        c = read(s, Char)  # advance one character
+        status = ccall(:ios_peekutf8, Int32, (Ptr{Void}, Ptr{Uint32}), s.ios, _wstmp)
+    end
+end
+
+function eatwspace_comment(s::IOStream, cmt::Char)
+    status = ccall(:ios_peekutf8, Int32, (Ptr{Void}, Ptr{Uint32}), s.ios, _wstmp)
+    while status > 0 && (iswspace(_wstmp[1]) || _wstmp[1] == cmt)
+        if _wstmp[1] == cmt
+            readline(s)
+        end
+        c = read(s, Char)  # advance one character
+        status = ccall(:ios_peekutf8, Int32, (Ptr{Void}, Ptr{Uint32}), s.ios, _wstmp)
     end
 end

@@ -55,7 +55,17 @@ type BackTrace <: Exception
     trace::Array{Any,1}
 end
 
+type ShowError <: Exception
+    val
+    err::Exception
+end
+
 show(io, bt::BackTrace) = show(io,bt.e)
+
+function show(io, se::ShowError)
+    println("Error showing value of type ", typeof(se.val), ":")
+    show(io, se.err)
+end
 
 method_missing(f, args...) = throw(MethodError(f, args))
 
@@ -95,8 +105,11 @@ istaskdone(t::Task) = t.done
 
 cstring(str::ByteString) = str
 
-# return an integer such that uid(x)==uid(y) if is(x,y)
-uid(x::ANY) = ccall(:jl_uid, Uint, (Any,), x)
+# return an integer such that object_id(x)==object_id(y) if is(x,y)
+object_id(x::ANY) = ccall(:jl_object_id, Uint, (Any,), x)
+
+const isimmutable = x->(isa(x,Tuple) || isa(x,Symbol) ||
+                        isa(typeof(x),BitsKind))
 
 dlsym(hnd, s::String) = ccall(:jl_dlsym, Ptr{Void}, (Ptr{Void}, Ptr{Uint8}), hnd, s)
 dlsym(hnd, s::Symbol) = ccall(:jl_dlsym, Ptr{Void}, (Ptr{Void}, Ptr{Uint8}), hnd, s)
@@ -123,9 +136,7 @@ function append_any(xs...)
     out
 end
 
-append(xs...) = append_any(xs...)
-
-macro thunk(ex); :(()->$ex); end
+macro thunk(ex); :(()->$esc(ex)); end
 macro L_str(s); s; end
 
 function compile_hint(f, args::Tuple)
@@ -134,8 +145,7 @@ function compile_hint(f, args::Tuple)
     end
 end
 
-# we share Array with Core so we can add definitions to it
-const Array = eval(Core, :Array)
+# NOTE: Base shares Array with Core so we can add definitions to it
 
 Array{T,N}(::Type{T}, d::NTuple{N,Int}) =
     ccall(:jl_new_array, Array{T,N}, (Any,Any), Array{T,N}, d)

@@ -102,15 +102,12 @@ DLLEXPORT jl_value_t *jl_stdout_stream(void)
 {
     jl_array_t *a = jl_alloc_array_1d(jl_array_uint8_type, sizeof(ios_t));
     a->data = (void*)ios_stdout;
+    jl_array_data_owner(a) = (jl_value_t*)a;
     return (jl_value_t*)a;
 }
 
 // --- stat ---
-DLLEXPORT int jl_sizeof_stat(void)
-{
-  struct stat buf;
-  return sizeof(buf);
-}
+DLLEXPORT int jl_sizeof_stat(void) { return sizeof(struct stat); }
 
 DLLEXPORT int32_t jl_stat(const char* path, char* statbuf)
 {
@@ -247,7 +244,6 @@ jl_array_t *jl_takebuf_array(ios_t *s)
         ios_trunc(s, 0);
     }
     else {
-        assert(s->julia_alloc);
         char *b = ios_takebuf(s, &n);
         a = jl_ptr_to_array_1d(jl_array_uint8_type, b, n-1, 1);
     }
@@ -261,6 +257,15 @@ jl_value_t *jl_takebuf_string(ios_t *s)
     jl_value_t *str = jl_array_to_string(a);
     JL_GC_POP();
     return str;
+}
+
+// the returned buffer must be manually freed. To determine the size,
+// call position(s) before using this function.
+void *jl_takebuf_raw(ios_t *s)
+{
+    size_t sz;
+    void *buf = ios_takebuf(s, &sz);
+    return buf;
 }
 
 jl_value_t *jl_readuntil(ios_t *s, uint8_t delim)
@@ -277,7 +282,7 @@ jl_value_t *jl_readuntil(ios_t *s, uint8_t delim)
     else {
         a = jl_alloc_array_1d(jl_array_uint8_type, 80);
         ios_t dest;
-        jl_ios_mem(&dest, 0);
+        ios_mem(&dest, 0);
         ios_setbuf(&dest, a->data, 80, 0);
         size_t n = ios_copyuntil(&dest, s, delim);
         if (dest.buf != a->data) {
@@ -299,6 +304,11 @@ jl_value_t *jl_readuntil(ios_t *s, uint8_t delim)
     return str;
 }
 
+void jl_free2(void *p, void *hint)
+{
+    free(p);
+}
+
 // -- syscall utilities --
 
 int jl_errno(void) { return errno; }
@@ -318,7 +328,8 @@ typedef DWORD (WINAPI *GAPC)(WORD);
 #endif
 #endif
 
-DLLEXPORT int jl_cpu_cores(void) {
+DLLEXPORT int jl_cpu_cores(void)
+{
 #if defined(HW_AVAILCPU) && defined(HW_NCPU)
     size_t len = 4;
     int32_t count;
@@ -466,7 +477,7 @@ static void *run_io_thr(void *arg)
 
         size_t nw;
         _os_write_all(r->fd, buf, n, &nw);
-        julia_free(buf);
+        free(buf);
 
         pthread_mutex_lock(&q_mut);
         r->next = ioq_freelist;
@@ -548,7 +559,10 @@ DLLEXPORT void jl_start_io_thread(void)
     pthread_mutex_init(&q_mut, NULL);
     pthread_mutex_init(&wake_mut, NULL);
     pthread_cond_init(&wake_cond, NULL);
-    pthread_create(&io_thread, NULL, run_io_thr, NULL);
+    pthread_attr_t attr;
+    pthread_attr_init(&attr);
+    pthread_attr_setstacksize(&attr, 262144);
+    pthread_create(&io_thread, &attr, run_io_thr, NULL);
 }
 
 DLLEXPORT uint8_t jl_zero_denormals(uint8_t isZero)

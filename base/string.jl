@@ -258,15 +258,27 @@ function begins_with(a::String, b::String)
     end
     done(b,i)
 end
-begins_with(a::String, c::Char) = length(a) > 0 && a[1] == c
+begins_with(a::String, c::Char) = length(a) > 0 && a[start(a)] == c
 
-# TODO: better ends_with
-ends_with(a::String, b::String) = begins_with(reverse(a),reverse(b))
-ends_with(a::String, c::Char) = length(a) > 0 && a[end] == c
+function ends_with(a::String, b::String)
+    i = thisind(a,length(a))
+    j = thisind(b,length(b))
+    a1 = start(a)
+    b1 = start(b)
+    while a1 <= i && b1 <= j
+        c = a[i]
+        d = b[j]
+        if c != d return false end
+        i = prevind(a,i)
+        j = prevind(b,j)
+    end
+    j < b1
+end
+ends_with(a::String, c::Char) = length(a) > 0 && a[thisind(a,end)] == c
 
 # faster comparisons for byte strings
 
-cmp(a::ByteString, b::ByteString)     = lexcmp(a.data, b.data)
+cmp(a::ByteString, b::ByteString)     = cmp(a.data, b.data)
 isequal(a::ByteString, b::ByteString) = length(a)==length(b) && cmp(a,b)==0
 
 # TODO: fast begins_with and ends_with
@@ -390,17 +402,17 @@ type RopeString <: String
     length::Int
 
     RopeString(h::RopeString, t::RopeString) =
-        depth(h.tail) + depth(t) < depth(h.head) ?
+        strdepth(h.tail) + strdepth(t) < strdepth(h.head) ?
             RopeString(h.head, RopeString(h.tail, t)) :
             new(h, t, max(h.depth,t.depth)+1, length(h)+length(t))
 
     RopeString(h::RopeString, t::String) =
-        depth(h.tail) < depth(h.head) ?
+        strdepth(h.tail) < strdepth(h.head) ?
             RopeString(h.head, RopeString(h.tail, t)) :
             new(h, t, h.depth+1, length(h)+length(t))
 
     RopeString(h::String, t::RopeString) =
-        depth(t.head) < depth(t.tail) ?
+        strdepth(t.head) < strdepth(t.tail) ?
             RopeString(RopeString(h, t.head), t.tail) :
             new(h, t, t.depth+1, length(h)+length(t))
 
@@ -409,8 +421,8 @@ type RopeString <: String
 end
 RopeString(s::String) = RopeString(s,"")
 
-depth(s::String) = 0
-depth(s::RopeString) = s.depth
+strdepth(s::String) = 0
+strdepth(s::RopeString) = s.depth
 
 function next(s::RopeString, i::Int)
     if i <= length(s.head)
@@ -452,6 +464,9 @@ end
 
 uppercase(c::Char) = ccall(:towupper, Char, (Char,), c)
 lowercase(c::Char) = ccall(:towlower, Char, (Char,), c)
+
+uppercase(c::Uint8) = ccall(:toupper, Uint8, (Uint8,), c)
+lowercase(c::Uint8) = ccall(:tolower, Uint8, (Uint8,), c)
 
 uppercase(s::String) = TransformedString((c,i)->uppercase(c), s)
 lowercase(s::String) = TransformedString((c,i)->lowercase(c), s)
@@ -626,7 +641,7 @@ function _jl_interp_parse(s::String, unescape::Function, printer::Function)
             if isa(ex,Expr) && is(ex.head,:continue)
                 throw(ParseError("incomplete expression"))
             end
-            push(sx, ex)
+            push(sx, esc(ex))
             i = j
         elseif c == '\\' && !done(s,k)
             if s[k] == '$'
@@ -710,7 +725,7 @@ function _jl_shell_parse(s::String, interp::Bool)
                 error("space not allowed right after \$")
             end
             ex, j = parseatom(s,j)
-            update_arg(ex); i = j
+            update_arg(esc(ex)); i = j
         else
             if !in_double_quotes && c == '\''
                 in_single_quotes = !in_single_quotes
@@ -1133,14 +1148,6 @@ for conv in (:float, :float32, :float64,
              :int, :int8, :int16, :int32, :int64,
              :uint, :uint8, :uint16, :uint32, :uint64)
     @eval ($conv){S<:String}(a::AbstractArray{S}) = map($conv, a)
-end
-
-# lexicographically compare byte arrays (used by Latin-1 and UTF-8)
-
-function lexcmp(a::Array{Uint8,1}, b::Array{Uint8,1})
-    c = ccall(:memcmp, Int32, (Ptr{Uint8}, Ptr{Uint8}, Uint),
-              a, b, min(length(a),length(b)))
-    c < 0 ? -1 : c > 0 ? +1 : cmp(length(a),length(b))
 end
 
 # find the index of the first occurrence of a value in a byte array

@@ -228,3 +228,11 @@ function sum(r::Ranges)
     l = length(r)
     return l * first(r) + step(r) * div(l * (l - 1), 2)
 end
+
+function map_to(f, dest, r::Ranges)
+    i = 1
+    for ri in r dest[i] = f(ri); i+=1; end
+    dest
+end
+
+map(f, r::Ranges) = [ f(x) for x in r ]

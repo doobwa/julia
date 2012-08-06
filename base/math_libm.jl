@@ -2,18 +2,18 @@ _jl_libm = dlopen("libm")
 
 macro _jl_libmfunc_1arg_float(T,f)
     quote
-        ($f)(x::Float64) = ccall(dlsym(_jl_libm,$string(f)), Float64, (Float64,), x)
-        ($f)(x::Float32) = ccall(dlsym(_jl_libm,$string(f,"f")), Float32, (Float32,), x)
-        ($f)(x::Real) = ($f)(float(x))
+        ($esc(f))(x::Float64) = ccall(dlsym(_jl_libm,$string(f)), Float64, (Float64,), x)
+        ($esc(f))(x::Float32) = ccall(dlsym(_jl_libm,$string(f,"f")), Float32, (Float32,), x)
+        ($esc(f))(x::Real) = ($f)(float(x))
         @vectorize_1arg $T $f
     end
 end
 
 macro _jl_libfdmfunc_1arg_float(T,f)
     quote
-        ($f)(x::Float64) = ccall(dlsym(_jl_libfdm,$string(f)), Float64, (Float64,), x)
-        ($f)(x::Float32) = ccall(dlsym(_jl_libfdm,$string(f,"f")), Float32, (Float32,), x)
-        ($f)(x::Real) = ($f)(float(x))
+        ($esc(f))(x::Float64) = ccall(dlsym(_jl_libfdm,$string(f)), Float64, (Float64,), x)
+        ($esc(f))(x::Float32) = ccall(dlsym(_jl_libfdm,$string(f,"f")), Float32, (Float32,), x)
+        ($esc(f))(x::Real) = ($f)(float(x))
         @vectorize_1arg $T $f
     end
 end
@@ -25,16 +25,16 @@ macro _jl_libmfunc_1arg_int(T,f,name...)
         fname = f
     end
     quote
-        ($fname)(x::Float64) = ccall(dlsym(_jl_libm,$string(f)), Int32, (Float64,), x)
-        ($fname)(x::Float32) = ccall(dlsym(_jl_libm,$string(f,"f")), Int32, (Float32,), x)
+        ($esc(fname))(x::Float64) = ccall(dlsym(_jl_libm,$string(f)), Int32, (Float64,), x)
+        ($esc(fname))(x::Float32) = ccall(dlsym(_jl_libm,$string(f,"f")), Int32, (Float32,), x)
         @vectorize_1arg $T $fname
     end
 end
 
 macro _jl_libfdmfunc_2arg(T,f)
     quote
-        ($f)(x::Float64, y::Float64) = ccall(dlsym(_jl_libfdm,$string(f)), Float64, (Float64, Float64,), x, y)
-        ($f)(x::Float32, y::Float32) = ccall(dlsym(_jl_libfdm,$string(f,"f")), Float32, (Float32, Float32), x, y)
+        ($esc(f))(x::Float64, y::Float64) = ccall(dlsym(_jl_libfdm,$string(f)), Float64, (Float64, Float64,), x, y)
+        ($esc(f))(x::Float32, y::Float32) = ccall(dlsym(_jl_libfdm,$string(f,"f")), Float32, (Float32, Float32), x, y)
         @vectorize_2arg $T $f
     end
 end
@@ -71,7 +71,21 @@ end
 
 #@_jl_libmfunc_1arg_int Real lrint
 #@_jl_libmfunc_1arg_int Real lround iround
-@_jl_libmfunc_1arg_int Real ilogb
+function ilogb(x::Float64)
+    if x==0 || isnan(x)
+        throw(DomainError())
+    end
+    ccall(dlsym(_jl_libm,:ilogb), Int32, (Float64,), x)
+end
+function ilogb(x::Float32)
+    if x==0 || isnan(x)
+        throw(DomainError())
+    end
+    ccall(dlsym(_jl_libm,:ilogbf), Int32, (Float32,), x)
+end
+@vectorize_1arg Real ilogb
+
+@_jl_libmfunc_1arg_float Real significand
 
 @_jl_libfdmfunc_2arg Number atan2
 atan2(x::Real, y::Real) = atan2(float64(x), float64(y))

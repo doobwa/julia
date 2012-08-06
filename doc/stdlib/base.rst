@@ -53,9 +53,9 @@ All Objects
 
    Create a tuple of length ``n``, computing each element as ``f(i)``, where ``i`` is the index of the element.
 
-.. function:: uid(x)
+.. function:: object_id(x)
 
-   Get a unique integer id for ``x``. ``uid(x)==uid(y)`` if and only if ``is(x,y)``.
+   Get a unique integer id for ``x``. ``object_id(x)==object_id(y)`` if and only if ``is(x,y)``.
 
 .. function:: hash(x)
 
@@ -67,7 +67,7 @@ All Objects
 
 .. function:: copy(x)
 
-   Create a deep copy of ``x``: i.e. ``copy`` is called recursively on all constituent parts of ``x``. If a user-defined type should be recursively copied, a ``copy`` method should be defined for it which implements deep copying of an instance.
+   Create a shallow copy of ``x``: the outer structure is copied, but not all internal values. For example, copying an array produces a new array with identically-same elements as the original.
 
 .. function:: convert(type, x)
 
@@ -1602,11 +1602,11 @@ System
 
    Get the IP address of the local machine, as a string of the form "x.x.x.x".
 
-.. function:: getcwd()
+.. function:: cwd()
 
    Get the current working directory.
 
-.. function:: setcwd("dir")
+.. function:: cd("dir")
 
    Set the current working directory. Returns the new current directory.
 

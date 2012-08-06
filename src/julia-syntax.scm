@@ -106,11 +106,12 @@
       (if last
 	  (if (= n 1)
 	      `(call (top length) ,a)
-	      `(call (top div)
+	      `(call (top trailingsize) ,a ,n))
+	      #;`(call (top div)
 		     (call (top length) ,a)
 		     (call (top *)
 			   ,@(map (lambda (d) `(call (top size) ,a ,(1+ d)))
-				  (iota (- n 1))))))
+				  (iota (- n 1)))))
 	  `(call (top size) ,a ,n))
       (let ((dimno `(call (top +) ,(- n (length tuples))
 			  ,@(map (lambda (t) `(call (top length) ,t))
@@ -210,8 +211,8 @@
 (define (symbols->typevars sl upperbounds bnd)
   (let ((bnd (if bnd '(true) '())))
     (if (null? upperbounds)
-	(map (lambda (x)    `(call (top typevar) ',x ,@bnd)) sl)
-	(map (lambda (x ub) `(call (top typevar) ',x ,ub ,@bnd)) sl upperbounds))))
+	(map (lambda (x)    `(call (top TypeVar) ',x ,@bnd)) sl)
+	(map (lambda (x ub) `(call (top TypeVar) ',x ,ub ,@bnd)) sl upperbounds))))
 
 (define (sparam-name-bounds sparams names bounds)
   (cond ((null? sparams)
@@ -219,12 +220,11 @@
 	((symbol? (car sparams))
 	 (sparam-name-bounds (cdr sparams) (cons (car sparams) names)
 			     (cons '(top Any) bounds)))
-	((and (length= (car sparams) 4)
-	      (eq? (caar sparams) 'comparison)
-	      (eq? (caddar sparams) '|<:|)
+	((and (length= (car sparams) 3)
+	      (eq? (caar sparams) '|<:|)
 	      (symbol? (cadar sparams)))
 	 (sparam-name-bounds (cdr sparams) (cons (cadr (car sparams)) names)
-			     (cons (cadddr (car sparams)) bounds)))
+			     (cons (caddr (car sparams)) bounds)))
 	(else
 	 (error "malformed type parameter list"))))
 
@@ -256,7 +256,7 @@
 
 (define (default-outer-ctor name field-names field-types params bounds)
   `(function (call (curly ,name
-			  ,@(map (lambda (p b) `(comparison ,p <: ,b))
+			  ,@(map (lambda (p b) `(<: ,p ,b))
 				 params bounds))
 		   ,@(map make-decl field-names field-types))
 	     (block
@@ -395,10 +395,9 @@
 		       (values name '() 'Any)) ex)
       ((pattern-lambda (curly (-- name (-s)) . params)
 		       (values name params 'Any)) ex)
-      ((pattern-lambda (comparison (-- name (-s)) (-/ |<:|) super)
+      ((pattern-lambda (|<:| (-- name (-s)) super)
 		       (values name '() super)) ex)
-      ((pattern-lambda (comparison (curly (-- name (-s)) . params)
-				   (-/ |<:|) super)
+      ((pattern-lambda (|<:| (curly (-- name (-s)) . params) super)
 		       (values name params super)) ex)
       (error "invalid type signature")))
 
@@ -453,7 +452,7 @@
 	  (loop (if isseq F (cdr F)) (cdr A) stmts
 		(list* rt (ccall-conversion ty ca) C))))))
 
-; patterns that introduce lambdas
+;; patterns that introduce lambdas
 (define binding-form-patterns
   (pattern-set
    ;; function with static parameters
@@ -526,7 +525,7 @@
 			    ((and (pair? (cadar binds))
 				  (eq? (caadar binds) 'call))
 			     ;; f()=c
-			     (let ((asgn (cadr (julia-expand0 (car binds)))))
+			     (let ((asgn (cadr (julia-expand0- (car binds)))))
 			       (loop (cdr binds) args inits
 				     (cons (cadr asgn) locls)
 				     (cons asgn stmts))))
@@ -535,7 +534,7 @@
 
    ;; macro definition
    (pattern-lambda (macro (call name . argl) body)
-		   `(macro ,name
+		   `(macro ,(symbol (string #\@ name))
 		      (-> (tuple ,@argl) ,body)))
 
    ;; type definition
@@ -553,6 +552,79 @@
 				  (scope-block ,catchblk))))
 
    )) ; binding-form-patterns
+
+;; a copy of the above patterns, but returning the names of vars
+;; introduced by the forms, instead of their transformations.
+(define vars-introduced-by-patterns
+  (pattern-set
+   ;; function with static parameters
+   (pattern-lambda (function (call (curly name . sparams) . argl) body)
+		   (cons 'varlist (llist-vars (fix-arglist argl))))
+
+   ;; function definition
+   (pattern-lambda (function (call name . argl) body)
+		   (cons 'varlist (llist-vars (fix-arglist argl))))
+
+   (pattern-lambda (function (tuple . args) body)
+		   `(-> (tuple ,@args) ,body))
+
+   ;; expression form function definition
+   (pattern-lambda (= (call (curly name . sparams) . argl) body)
+		   `(function (call (curly ,name . ,sparams) . ,argl) ,body))
+   (pattern-lambda (= (call name . argl) body)
+		   `(function (call ,name ,@argl) ,body))
+
+   ;; anonymous function
+   (pattern-lambda (-> a b)
+		   (let ((a (if (and (pair? a)
+				     (eq? (car a) 'tuple))
+				(cdr a)
+				(list a))))
+		     (cons 'varlist (llist-vars (fix-arglist a)))))
+
+   ;; let
+   (pattern-lambda (let ex . binds)
+		   (let loop ((binds binds)
+			      (args  ())
+			      (inits ())
+			      (locls ())
+			      (stmts ()))
+		     (if (null? binds)
+			 (cons 'varlist
+			       (append! (llist-vars (fix-arglist args))
+					locls))
+			 (cond
+			  ((or (symbol? (car binds)) (decl? (car binds)))
+			   ;; just symbol -> add local
+			   (loop (cdr binds) args inits
+				 (cons (car binds) locls)
+				 stmts))
+			  ((and (length= (car binds) 3)
+				(eq? (caar binds) '=))
+			   ;; some kind of assignment
+			   (cond
+			    ((or (symbol? (cadar binds))
+				 (decl?   (cadar binds)))
+			     ;; a=b -> add argument
+			     (loop (cdr binds)
+				   (cons (cadar binds) args)
+				   (cons (caddar binds) inits)
+				   locls stmts))
+			    ((and (pair? (cadar binds))
+				  (eq? (caadar binds) 'call))
+			     ;; f()=c
+			     (let ((asgn (cadr (julia-expand0- (car binds)))))
+			       (loop (cdr binds) args inits
+				     (cons (cadr asgn) locls)
+				     (cons asgn stmts))))
+			    (else '())))
+			  (else '())))))
+
+   ;; macro definition
+   (pattern-lambda (macro (call name . argl) body)
+		   `(-> (tuple ,@argl) ,body))
+
+   )) ; vars-introduced-by-patterns
 
 ; local x, y=2, z => local x;local y;local z;y = 2
 (define (expand-decls what binds)
@@ -659,7 +731,7 @@
 		    (sparam-name-bounds params '() '())
 		    `(call (lambda ,params
 			     (const
-			      (= ,name (call (top new_type_constructor)
+			      (= ,name (call (top TypeConstructor)
 					     (tuple ,@params) ,type-ex))))
 			   ,@(symbols->typevars params bounds #f))))
 
@@ -1030,7 +1102,8 @@
       (block 
        (= ,oneresult (tuple))
        ,(evaluate-one ranges)
-       (= ,result (call _jl_comprehension_zeros ,oneresult ,@(compute-dims ranges 1) ))
+       (= ,result (call (top Array) (call (top eltype) ,oneresult)
+			,@(compute-dims ranges 1)))
        (= ,ri 1)
        ,(construct-loops (reverse ranges) (list) 1)
        ,result ))))
@@ -1838,6 +1911,8 @@ So far only the second case can actually occur.
 (define (to-goto-form e)
   (goto-form e))
 
+;; macro expander
+
 (define (expand-backquote e)
   (cond ((or (eq? e 'true) (eq? e 'false))  e)
 	((symbol? e)          `(quote ,e))
@@ -1871,14 +1946,110 @@ So far only the second case can actually occur.
 	((eq? (car e) 'macrocall)
 	 ;; expand macro
 	 (let ((form
-		(apply invoke-julia-macro (cadr e) (cddr e))))
+		(apply invoke-julia-macro (symbol (string #\@ (cadr e)))
+		       (cddr e))))
 	   (if (not form)
 	       (error (string "macro " (cadr e) " not defined")))
 	   (if (equal? form '(error))
 	       (error (string "error expanding macro " (cadr e))))
-	   (julia-expand-macros form)))
+	   (let ((form (car form))
+		 (m    (cdr form)))
+	     ;; m is the macro's def module, or #f if def env === use env
+	     (julia-expand-macros
+	      (resolve-expansion-vars form m)))))
 	(else
 	 (map julia-expand-macros e))))
+
+(define (pair-with-gensyms v)
+  (map (lambda (s) (cons s (gensy))) v))
+
+(define (resolve-expansion-vars- e env m)
+  (cond ((or (eq? e 'true) (eq? e 'false))
+	 e)
+	((symbol? e)
+	 (let ((a (assq e env)))
+	   (if a (cdr a)
+	       (if m `(|.| ,m (quote ,e))
+		   e))))
+	((or (not (pair? e)) (quoted? e))
+	 e)
+	(else
+	 (case (car e)
+	   ((escape) (cadr e))
+	   ((macrocall)
+	    `(macrocall ,(cadr e) ;; TODO: might need to be resolved
+			,@(map (lambda (x)
+				 (resolve-expansion-vars- x env m))
+			       (cddr e))))
+	   ;; todo: trycatch
+	   (else
+	    (cons (car e)
+		  (map (lambda (x)
+			 (resolve-expansion-vars-
+			  x
+			  (append!
+			   (filter (lambda (x)
+				     (not (assq (car x) env)))
+				   (pair-with-gensyms (vars-introduced-by x)))
+			   env)
+			  m))
+		       (cdr e))))))))
+
+;; decl-var that also identifies f in f()=...
+(define (decl-var* e)
+  (cond ((not (pair? e))       e)
+	((eq? (car e) 'escape) '())
+	((eq? (car e) 'call)   (decl-var* (cadr e)))
+	((eq? (car e) '=)      (decl-var* (cadr e)))
+	((eq? (car e) 'curly)  (decl-var* (cadr e)))
+	(else                  (decl-var e))))
+
+(define (find-declared-vars-in-expansion e decl)
+  (if (or (not (pair? e)) (quoted? e))
+      '()
+      (cond ((eq? (car e) 'escape)  '())
+	    ((eq? (car e) decl)     (map decl-var* (cdr e)))
+	    (else
+	     (apply append! (map (lambda (x)
+				   (find-declared-vars-in-expansion x decl))
+				 e))))))
+
+(define (find-assigned-vars-in-expansion e)
+  (if (or (not (pair? e)) (quoted? e))
+      '()
+      (case (car e)
+	((escape)  '())
+	((= function)
+	 (append! (filter
+		   symbol?
+		   (if (and (pair? (cadr e)) (eq? (car (cadr e)) 'tuple))
+		       (map decl-var* (cdr (cadr e)))
+		       (list (decl-var* (cadr e)))))
+		  (find-assigned-vars-in-expansion (caddr e))))
+	(else
+	 (apply append! (map find-assigned-vars-in-expansion e))))))
+
+(define (vars-introduced-by e)
+  (let ((v (pattern-expand1 vars-introduced-by-patterns e)))
+    (if (and (pair? v) (eq? (car v) 'varlist))
+	(cdr v)
+	'())))
+
+(define (env-for-expansion e)
+  (let ((v (diff (delete-duplicates
+		  (append! (find-declared-vars-in-expansion e 'local)
+			   (find-assigned-vars-in-expansion e)
+			   (vars-introduced-by e)))
+		 (find-declared-vars-in-expansion e 'global))))
+    (pair-with-gensyms v)))
+
+(define (resolve-expansion-vars e m)
+  ;; expand binding form patterns
+  ;; keep track of environment, rename locals to gensyms
+  ;; and wrap globals in (getfield module var) for macro's home module
+  (resolve-expansion-vars- e (env-for-expansion e) m))
+
+;; expander entry point
 
 (define (julia-expand1 ex)
   (to-goto-form
@@ -1886,8 +2057,18 @@ So far only the second case can actually occur.
     (flatten-scopes
      (identify-locals ex)))))
 
+(define *in-expand0* #f)
+
 (define (julia-expand0 ex)
-  (reset-gensyms)
+  (let ((last *in-expand0*))
+    (if (not last)
+	(begin (reset-gensyms)
+	       (set! *in-expand0* #t)))
+    (let ((e (julia-expand0- ex)))
+      (set! *in-expand0* last)
+      e)))
+
+(define (julia-expand0- ex)
   (to-LFF
    (pattern-expand patterns
     (pattern-expand lower-comprehensions

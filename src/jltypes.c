@@ -1172,8 +1172,13 @@ jl_value_t *jl_type_intersection_matching(jl_value_t *a, jl_value_t *b,
     }
 
     if (env0 > 0) {
-        ti = (jl_value_t*)
-            jl_instantiate_type_with((jl_type_t*)ti, &jl_t0(*penv), eqc.n/2);
+        JL_TRY {
+            ti = (jl_value_t*)jl_instantiate_type_with((jl_type_t*)ti,
+                                                       &jl_t0(*penv), eqc.n/2);
+        }
+        JL_CATCH {
+            ti = (jl_value_t*)jl_bottom_type;
+        }
     }
 
     JL_GC_POP(); JL_GC_POP(); JL_GC_POP();
@@ -2298,7 +2303,7 @@ void jl_init_types(void)
                                                jl_symbol("ub")),
                                       jl_tuple(3, jl_sym_type, jl_type_type,
                                                jl_type_type));
-    jl_tvar_type->fptr = jl_f_no_function;
+    jl_tvar_type->fptr = jl_f_typevar;
 
     jl_undef_type = jl_new_tagtype((jl_value_t*)jl_symbol("Undef"),
                                    jl_any_type, jl_null);
@@ -2328,19 +2333,19 @@ void jl_init_types(void)
 
     // non-primitive definitions follow
     jl_int32_type = NULL;
-    jl_int32_type = jl_new_bitstype((jl_value_t*)jl_symbol("Int32"),
-                                    jl_any_type, jl_null, 32);
+    jl_int32_type = jl_new_bits_type((jl_value_t*)jl_symbol("Int32"),
+                                     jl_any_type, jl_null, 32);
     jl_int64_type = NULL;
-    jl_int64_type = jl_new_bitstype((jl_value_t*)jl_symbol("Int64"),
-                                    jl_any_type, jl_null, 64);
+    jl_int64_type = jl_new_bits_type((jl_value_t*)jl_symbol("Int64"),
+                                     jl_any_type, jl_null, 64);
     jl_init_int32_int64_cache();
     jl_int32_type->bnbits = jl_box_int32(32);
     jl_int64_type->bnbits = jl_box_int32(64);
     jl_tupleset(jl_bits_kind->types, 3, (jl_value_t*)jl_int32_type);
 
     jl_bool_type = NULL;
-    jl_bool_type = jl_new_bitstype((jl_value_t*)jl_symbol("Bool"),
-                                   jl_any_type, jl_null, 8);
+    jl_bool_type = jl_new_bits_type((jl_value_t*)jl_symbol("Bool"),
+                                    jl_any_type, jl_null, 8);
     jl_false = jl_box8(jl_bool_type, 0);
     jl_true  = jl_box8(jl_bool_type, 1);
 
@@ -2421,8 +2426,8 @@ void jl_init_types(void)
 
     jl_module_type =
         jl_new_struct_type(jl_symbol("Module"), jl_any_type, jl_null,
-                           jl_tuple(1, jl_symbol("name")),
-                           jl_tuple(1, jl_sym_type));
+                           jl_tuple(2, jl_symbol("name"), jl_symbol("parent")),
+                           jl_tuple(2, jl_sym_type, jl_any_type));
 
     jl_lambda_info_type =
         jl_new_struct_type(jl_symbol("LambdaStaticData"),
@@ -2462,6 +2467,7 @@ void jl_init_types(void)
                            jl_tuple(2, jl_symbol("parameters"),
                                     jl_symbol("body")),
                            jl_tuple(2, jl_tuple_type, jl_any_type));
+    jl_typector_type->fptr = jl_f_new_type_constructor;
 
     jl_function_type =
         jl_new_struct_type(jl_symbol("Function"), jl_any_type, jl_null,
@@ -2476,13 +2482,13 @@ void jl_init_types(void)
 
     jl_bottom_func = jl_new_closure(jl_f_no_function, JL_NULL, NULL);
 
-    jl_intrinsic_type = jl_new_bitstype((jl_value_t*)jl_symbol("IntrinsicFunction"),
-                                        jl_any_type, jl_null, 32);
+    jl_intrinsic_type = jl_new_bits_type((jl_value_t*)jl_symbol("IntrinsicFunction"),
+                                         jl_any_type, jl_null, 32);
 
     tv = jl_tuple1(tvar("T"));
     jl_pointer_type =
-        jl_new_bitstype((jl_value_t*)jl_symbol("Ptr"), jl_any_type, tv,
-                        sizeof(void*)*8);
+        jl_new_bits_type((jl_value_t*)jl_symbol("Ptr"), jl_any_type, tv,
+                         sizeof(void*)*8);
 
     // Type{T}
     jl_typetype_tvar = jl_new_typevar(jl_symbol("T"),
@@ -2524,6 +2530,7 @@ void jl_init_types(void)
     new_sym = jl_symbol("new");
     multivalue_sym = jl_symbol("multiple_value");
     const_sym = jl_symbol("const");
+    global_sym = jl_symbol("global");
     thunk_sym = jl_symbol("thunk");
     anonymous_sym = jl_symbol("anonymous");
     underscore_sym = jl_symbol("_");

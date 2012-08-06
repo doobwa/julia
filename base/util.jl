@@ -33,24 +33,21 @@ end
 
 # print elapsed time, return expression value
 macro time(ex)
-    @gensym t0 val t1
     quote
-        local $t0 = time()
-        local $val = $ex
-        local $t1 = time()
-        println("elapsed time: ", $t1-$t0, " seconds")
-        $val
+        local t0 = time()
+        local val = $esc(ex)
+        local t1 = time()
+        println("elapsed time: ", t1-t0, " seconds")
+        val
     end
 end
 
 # print nothing, return elapsed time
 macro elapsed(ex)
-    @gensym t0 val t1
     quote
-        local $t0 = time()
-        local $val = $ex
-        local $t1 = time()
-        $t1-$t0
+        local t0 = time()
+        local val = $esc(ex)
+        time()-t0
     end
 end
 
@@ -152,9 +149,8 @@ edit(f::Function, t) = edit(function_loc(f,t)...)
 less(f::Function)    = less(function_loc(f)...)
 less(f::Function, t) = less(function_loc(f,t)...)
 
-function disassemble(f::Function, types)
-    ccall(:jl_dump_function, Any, (Any,Any), f, types)::ByteString
-end
+disassemble(f::Function, types::Tuple) =
+    print(ccall(:jl_dump_function, Any, (Any,Any), f, types)::ByteString)
 
 function methods(f::Function)
     if !isgeneric(f)
@@ -172,7 +168,7 @@ global _jl_package_list = Dict{ByteString,Float64}()
 require(fname::String) = require(cstring(fname))
 require(f::String, fs::String...) = (require(f); for x in fs require(x); end)
 function require(name::ByteString)
-    path = find_in_path(name)
+    path = real_path(find_in_path(name))
     if !has(_jl_package_list,path)
         load(name)
     else
@@ -225,7 +221,7 @@ load(fname::String) = load(cstring(fname))
 load(f::String, fs::String...) = (load(f); for x in fs load(x); end)
 function load(fname::ByteString)
     if in_load
-        path = find_in_path(fname)
+        path = real_path(find_in_path(fname))
         _jl_package_list[path] = time()
         push(load_dict, fname)
         f = open(path)
@@ -272,6 +268,8 @@ function remote_load(dict)
 end
 end
 
+evalfile(fname::String) = eval(parse(readall(fname))[1])
+
 # help
 
 _jl_help_category_list = nothing
@@ -282,11 +280,11 @@ function _jl_init_help()
     global _jl_help_category_list, _jl_help_category_dict, _jl_help_function_dict
     if _jl_help_category_dict == nothing
         println("Loading help data...")
-        load("$JULIA_HOME/../lib/julia/helpdb.jl")
+        helpdb = evalfile("$JULIA_HOME/../lib/julia/helpdb.jl")
         _jl_help_category_list = {}
         _jl_help_category_dict = Dict()
         _jl_help_function_dict = Dict()
-        for (cat,func,desc) in _jl_help_db()
+        for (cat,func,desc) in helpdb
             if !has(_jl_help_category_dict, cat)
                 push(_jl_help_category_list, cat)
                 _jl_help_category_dict[cat] = {}
@@ -361,7 +359,7 @@ end
 function apropos(txt::String)
     _jl_init_help()
     n = 0
-    r = Regex("\\Q$txt", PCRE_CASELESS)
+    r = Regex("\\Q$txt", PCRE.CASELESS)
     first = true
     for (cat, _) in _jl_help_category_dict
         if matches(r, cat)

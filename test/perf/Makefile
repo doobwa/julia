@@ -4,10 +4,10 @@ include $(JULIAHOME)/Make.inc
 default: benchmarks.html
 
 bin/perf%: perf.cpp
-	$(CXX) -O$* $< -o $@ $(JULIAHOME)/deps/openblas-v0.1.1/libopenblas.a -lpthread
+	$(CXX) -O$* $< -o $@ $(JULIAHOME)/deps/openblas-v0.2.0/libopenblas.a -lpthread
 
 bin/fperf%: perf.f90
-	$(FC) -static-libgfortran -O$* -fexternal-blas $< -o $@ $(JULIAHOME)/deps/openblas-v0.1.1/libopenblas.a -lpthread
+	$(FC) -static-libgfortran -O$* -fexternal-blas $< -o $@ $(JULIAHOME)/deps/openblas-v0.2.0/libopenblas.a -lpthread
 
 benchmarks/c.csv: \
 	benchmarks/c0.csv \
@@ -64,6 +64,6 @@ benchmarks.html: bin/table.pl benchmarks.csv
 	$(QUIET_PERL) $^ >$@
 
 clean:
-	@rm -rf bin/perf* bin/fperf* benchmarks/*.csv benchmarks.csv
+	@rm -rf bin/perf* bin/fperf* benchmarks/*.csv benchmarks.csv *.mod
 
 .PHONY: all perf clean

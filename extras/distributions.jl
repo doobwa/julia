@@ -50,6 +50,7 @@ macro _jl_dist_1p(T, b)
     pn = Ty.names                       # parameter names
     p  = expr(:quote,pn[1])
     quote
+        global $pf,$lf,cdf,logcdf,ccdf,logccdf,quantile,cquantile,invlogcdf,invlogccdf,rand
         function ($pf)(d::($T), x::Real)
             ccall(dlsym(_jl_libRmath, $dd),
                   Float64, (Float64, Float64, Int32),
@@ -130,6 +131,7 @@ macro _jl_dist_2p(T, b)
         qq = expr(:quote, :qnorm5)
     end
     quote
+        global $pf,$lf,cdf,logcdf,ccdf,logccdf,quantile,cquantile,invlogcdf,invlogccdf,rand
         function ($pf)(d::($T), x::Real)
             ccall(dlsym(_jl_libRmath, $dd),
                   Float64, (Float64, Float64, Float64, Int32),
@@ -208,6 +210,7 @@ macro _jl_dist_3p(T, b)
     p2 = expr(:quote,pn[2])    
     p3 = expr(:quote,pn[3])
     quote
+        global $pf,$lf,cdf,logcdf,ccdf,logccdf,quantile,cquantile,invlogcdf,invlogccdf,rand
         function ($pf)(d::($T), x::Real)
             ccall(dlsym(_jl_libRmath, $dd),
                   Float64, (Float64, Float64, Float64, Float64, Int32),
@@ -588,13 +591,13 @@ insupport(d::TDist, x::Number) = real_valued(x) && isfinite(x)
 type Uniform <: ContinuousDistribution
     a::Float64
     b::Float64
-    Uniform(aa, bb) = aa < bb ? new(float64(aa), float64(bb)) : error("a < b required for range [a, b]")
+    Uniform(a, b) = a < b ? new(float64(a), float64(b)) : error("a < b required for range [a, b]")
 end
 Uniform() = Uniform(0, 1)
 @_jl_dist_2p Uniform unif
 mean(d::Uniform) = (d.a + d.b) / 2.
 median(d::Uniform) = (d.a + d.b)/2.
-rand(d::Uniform) = d.a + d.b * rand()
+rand(d::Uniform) = d.a + (d.b - d.a) * rand()
 var(d::Uniform) = (w = d.b - d.a; w * w / 12.)
 insupport(d::Uniform, x::Number) = real_valued(x) && d.a <= x <= d.b
 
@@ -685,18 +688,19 @@ end
 pmf{T <: Real}(d::Multinomial, x::Vector{T}) = exp(logpmf(d, x))
 
 function rand(d::Multinomial)
+  n = d.n
   l = numel(d.prob)
   s = zeros(Int, l)
-  for i = 1:d.n
-    r = rand()
-    for j = 1:l
-      r -= d.prob[j]
-      if r <= 0.0
-        s[j] += 1
-        break
-      end
+  psum = 1.0
+  for j = 1:(l - 1)
+    s[j] = int(ccall(dlsym(_jl_libRmath, "rbinom"), Float64, (Float64, Float64), n, d.prob[j] / psum))
+    n -= s[j]
+    if n == 0
+      break
     end
+    psum -= d.prob[j]
   end
+  s[end] = n
   s
 end
 

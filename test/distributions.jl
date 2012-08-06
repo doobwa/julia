@@ -1,4 +1,4 @@
-load("../base/distributions.jl")
+load("../extras/distributions.jl")
 
 # n probability points, i.e. the midpoints of the intervals [0, 1/n],...,[1-1/n, 1]
 probpts(n::Int) = ((1:n) - 0.5)/n  
@@ -50,9 +50,9 @@ d = Multinomial(1, [0.6; 0.4])
 d = Multinomial(1, [0.6; 0.4]')
 mean(d)
 var(d)
-insupport(d, [1, 0])
-insupport(d, [1, 1])
-insupport(d, [0, 1])
+@assert insupport(d, [1, 0])
+@assert !insupport(d, [1, 1])
+@assert insupport(d, [0, 1])
 pmf(d, [1, 0])
 pmf(d, [1, 1])
 pmf(d, [0, 1])
