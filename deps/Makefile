@@ -1,20 +1,8 @@
-## library versions ##
+include Versions.make
 
-LLVM_VER = 3.1
-READLINE_VER = 6.2
-PCRE_VER = 8.30
-GRISU_VER = 1.1.1
-DSFMT_VER = 2.1
-OPENBLAS_VER = v0.2.2
-LAPACK_VER = 3.4.1
-ARPACK_VER = 3.1.1
-FFTW_VER = 3.3.2
-SUITESPARSE_VER = 4.0.0
-CLP_VER = 1.14.5
-UNWIND_VER = 1.0.1
-LIGHTTPD_VER = 1.4.29
-GMP_VER=5.0.5
-GLPK_VER = 4.47
+## optional packages ##
+# set to 1 to get clang and compiler-rt
+BUILD_LLVM_CLANG = 0
 
 ## high-level setup ##
 
@@ -121,11 +109,46 @@ else
 LLVM_TAR=llvm-$(LLVM_VER).src.tar.gz
 endif
 
+ifneq ($(BUILD_LLVM_CLANG), 1)
+LLVM_CLANG_TAR=
+LLVM_COMPILER_RT_TAR=
+else
+
+ifeq ($(LLVM_VER), 3.0)
+LLVM_CLANG_TAR=clang-$(LLVM_VER).tar.gz
+LLVM_COMPILER_RT_TAR=
+else
+LLVM_CLANG_TAR=clang-$(LLVM_VER).src.tar.gz
+LLVM_COMPILER_RT_TAR=compiler-rt-$(LLVM_VER).src.tar.gz
+endif
+
+endif
+
+ifneq ($(LLVM_CLANG_TAR),)
+$(LLVM_CLANG_TAR):
+	$(WGET) http://llvm.org/releases/$(LLVM_VER)/$@
+endif
+
+ifneq ($(LLVM_COMPILER_RT_TAR),)
+$(LLVM_COMPILER_RT_TAR):
+	$(WGET) http://llvm.org/releases/$(LLVM_VER)/$@
+endif
+
+
 $(LLVM_TAR):
 	$(WGET) http://llvm.org/releases/$(LLVM_VER)/$@
-llvm-$(LLVM_VER)/configure: $(LLVM_TAR) 
+
+llvm-$(LLVM_VER)/configure: $(LLVM_TAR) $(LLVM_CLANG_TAR) $(LLVM_COMPILER_RT_TAR)
 	mkdir -p llvm-$(LLVM_VER) && \
-	tar -C llvm-$(LLVM_VER) --strip-components 1 -xf $<
+	tar -C llvm-$(LLVM_VER) --strip-components 1 -xf $(LLVM_TAR)
+ifneq ($(LLVM_CLANG_TAR),)
+	mkdir -p llvm-$(LLVM_VER)/tools/clang && \
+	tar -C llvm-$(LLVM_VER)/tools/clang --strip-components 1 -xf $(LLVM_CLANG_TAR)
+endif
+ifneq ($(LLVM_COMPILER_RT_TAR),)
+	mkdir -p llvm-$(LLVM_VER)/projects/compiler-rt && \
+	tar -C llvm-$(LLVM_VER)/projects/compiler-rt --strip-components 1 -xf $(LLVM_COMPILER_RT_TAR)
+endif
 	touch $@
 
 ## LLVM needs python 2.x, but doesn't check for it, so we have to use an ugly workaround to make it compile
@@ -152,7 +175,7 @@ clean-llvm:
 	$(MAKE) -C llvm-$(LLVM_VER) clean
 	rm -f $(USRBIN)/llvm-config
 distclean-llvm:
-	rm -rf llvm-$(LLVM_VER).tar.gz llvm-$(LLVM_VER)
+	rm -rf llvm-$(LLVM_VER).tar.gz llvm-$(LLVM_VER).src.tar.gz clang-$(LLVM_VER).src.tar.gz clang-$(LLVM_VER).tar.gz compiler-rt-$(LLVM_VER).src.tar.gz llvm-$(LLVM_VER)
 
 ## GNU readline ##
 
@@ -596,7 +619,7 @@ compile-suitesparse: $(SUITESPARSE_OBJ_SOURCE)
 install-suitesparse: $(SUITESPARSE_OBJ_TARGET) $(USRLIB)/libsuitesparse_wrapper.$(SHLIB_EXT)
 
 SuiteSparse-$(SUITESPARSE_VER).tar.gz:
-	$(WGET) http://d304tytmzqn1fl.cloudfront.net/$@
+	$(WGET) http://www.cise.ufl.edu/research/sparse/SuiteSparse/SuiteSparse-$(SUITESPARSE_VER).tar.gz
 SuiteSparse-$(SUITESPARSE_VER)/Makefile: SuiteSparse-$(SUITESPARSE_VER).tar.gz
 	mkdir -p SuiteSparse-$(SUITESPARSE_VER)
 	tar -C SuiteSparse-$(SUITESPARSE_VER) --strip-components 1 -zxf $<
@@ -634,8 +657,8 @@ ifeq ($(USE_SYSTEM_SUITESPARSE), 1)
 SUITESPARSE_INC = -I /usr/include/suitesparse
 SUITESPARSE_LIB = -lumfpack -lcholmod -lamd -lcamd -lcolamd
 else
-SUITESPARSE_INC = -I SuiteSparse-$(SUITESPARSE_VER)/CHOLMOD/Include -I SuiteSparse-$(SUITESPARSE_VER)/SuiteSparse_config -L$(USRLIB)
-SUITESPARSE_LIB = -lcholmod
+SUITESPARSE_INC = -I SuiteSparse-$(SUITESPARSE_VER)/CHOLMOD/Include -I SuiteSparse-$(SUITESPARSE_VER)/SuiteSparse_config
+SUITESPARSE_LIB = -L$(USRLIB) -lcholmod $(RPATH_ORIGIN)
 endif
 
 $(USRLIB)/libsuitesparse_wrapper.$(SHLIB_EXT): SuiteSparse_wrapper.c $(SUITESPARSE_OBJ_TARGET)

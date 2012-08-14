@@ -108,7 +108,7 @@ function run_repl()
 end
 
 function parse_input_line(s::String)
-    # s = cstring(s)
+    # s = bytestring(s)
     # (expr, pos) = parse(s, 1, true)
     # (ex, pos) = ccall(:jl_parse_string, Any,
     #                   (Ptr{Uint8},Int32,Int32),
@@ -226,7 +226,8 @@ function _start()
 
         (quiet,repl) = process_options(ARGS)
         if repl
-            global _jl_have_color = success(`tput setaf 0`) || has(ENV, "TERM") && matches(r"^xterm", ENV["TERM"])
+            global _jl_have_color = success(`tput setaf 0`) ||
+                                    begins_with(get(ENV,"TERM",""),"xterm")
             global _jl_is_interactive = true
             if !quiet
                 _jl_banner()

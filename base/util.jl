@@ -63,7 +63,7 @@ end
 # source files, editing, function reflection
 
 function function_loc(f::Function, types)
-    for m = getmethods(f, types)
+    for m = methods(f, types)
         if isa(m[3],LambdaStaticData)
             lsd = m[3]::LambdaStaticData
             ln = lsd.line
@@ -77,7 +77,7 @@ end
 function_loc(f::Function) = function_loc(f, (Any...))
 
 function whicht(f, types)
-    for m = getmethods(f, types)
+    for m = methods(f, types)
         if isa(m[3],LambdaStaticData)
             lsd = m[3]::LambdaStaticData
             d = f.env.defs
@@ -119,7 +119,7 @@ function edit(file::String, line::Int)
         elseif editor == "subl"
             run(`subl $file:$line`)
         else
-            error("Invalid JULIA_EDITOR value: $(sshow(editor))")
+            error("Invalid JULIA_EDITOR value: $(repr(editor))")
         end
     else
         if editor == "emacs"
@@ -131,7 +131,7 @@ function edit(file::String, line::Int)
         elseif editor == "subl"
             run(`subl $file:$line`)
         else
-            error("Invalid JULIA_EDITOR value: $(sshow(editor))")
+            error("Invalid JULIA_EDITOR value: $(repr(editor))")
         end
     end
     nothing
@@ -165,10 +165,10 @@ methods(t::CompositeKind) = t.env
 # require
 # Store list of files and their load time
 global _jl_package_list = Dict{ByteString,Float64}()
-require(fname::String) = require(cstring(fname))
+require(fname::String) = require(bytestring(fname))
 require(f::String, fs::String...) = (require(f); for x in fs require(x); end)
 function require(name::ByteString)
-    path = real_path(find_in_path(name))
+    path = find_in_path(name)
     if !has(_jl_package_list,path)
         load(name)
     else
@@ -186,7 +186,7 @@ include_string(txt::ByteString) = ccall(:jl_load_file_string, Void, (Ptr{Uint8},
 function is_file_readable(path)
     local f
     try
-        f = open(cstring(path))
+        f = open(bytestring(path))
     catch
         return false
     end
@@ -217,11 +217,11 @@ local in_remote_load = false
 local load_dict = {}
 global load, remote_load
 
-load(fname::String) = load(cstring(fname))
+load(fname::String) = load(bytestring(fname))
 load(f::String, fs::String...) = (load(f); for x in fs load(x); end)
 function load(fname::ByteString)
     if in_load
-        path = real_path(find_in_path(fname))
+        path = find_in_path(fname)
         _jl_package_list[path] = time()
         push(load_dict, fname)
         f = open(path)
@@ -362,13 +362,13 @@ function apropos(txt::String)
     r = Regex("\\Q$txt", PCRE.CASELESS)
     first = true
     for (cat, _) in _jl_help_category_dict
-        if matches(r, cat)
+        if ismatch(r, cat)
             println("Category: \"$cat\"")
             first = false
         end
     end
     for (func, entries) in _jl_help_function_dict
-        if matches(r, func) || anyp(e->matches(r,e), entries)
+        if ismatch(r, func) || anyp(e->ismatch(r,e), entries)
             if !first
                 println()
             end
@@ -403,3 +403,23 @@ end
 # misc
 
 times(f::Function, n::Int) = for i=1:n f() end
+
+# memoization
+
+macro memoize(ex)
+    local f, u
+    if isa(ex,Expr) && (ex.head == :function || ex.head == symbol("=")) &&
+       !isempty(ex.args) && ex.args[1].head == :call && !isempty(ex.args[1].args)
+        f = ex.args[1].args[1]
+        ex.args[1].args[1] = u = symbol(string(f,"_unmemoized"))
+    else
+        error("@memoize must be applied to a method definition")
+    end
+    f_cache = esc(symbol(string(f,"_cache")))
+    quote
+        ($esc(ex))
+        const ($f_cache) = Dict{Tuple,Any}()
+        ($esc(f))(args...) = has(($f_cache),args) ?
+            ($f_cache)[args] : (($f_cache)[args] = ($esc(u))(args...))
+    end
+end
