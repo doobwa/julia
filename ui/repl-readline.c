@@ -135,8 +135,7 @@ static void reset_indent(void) {
 // TODO: is it appropriate to call this on the int values readline uses?
 static int jl_word_char(uint32_t wc)
 {
-    return ('A' <= wc && wc <= 'Z') || ('a' <= wc && wc <= 'z') ||
-           ('0' <= wc && wc <= '9') || (0xA1 <= wc) || (wc == '_');
+    return strchr(rl_completer_word_break_characters, wc) == NULL;
 }
 
 static int newline_callback(int count, int key) {
@@ -255,7 +254,9 @@ static int backspace_callback(int count, int key) {
     goto finish;
 
 backspace:
-    rl_point = (i == 0 || rl_point-i > prompt_length) ? rl_point-1 : i-1;
+    do {
+        rl_point = (i == 0 || rl_point-i > prompt_length) ? rl_point-1 : i-1;
+    } while (locale_is_utf8 && !isutf(rl_line_buffer[rl_point]) && rl_point > i-1);
 
 finish:
     rl_delete_text(rl_point, j);
@@ -265,7 +266,9 @@ finish:
 static int delete_callback(int count, int key) {
     reset_indent();
     int j = rl_point;
-    j += (rl_line_buffer[j] == '\n') ? prompt_length+1 : 1;
+    do {
+        j += (rl_line_buffer[j] == '\n') ? prompt_length+1 : 1;
+    } while (locale_is_utf8 && !isutf(rl_line_buffer[j]));
     if (rl_end < j) j = rl_end;
     rl_delete_text(rl_point, j);
     return 0;
@@ -275,15 +278,18 @@ static int left_callback(int count, int key) {
     reset_indent();
     if (rl_point > 0) {
         int i = line_start(rl_point);
-        rl_point = (i == 0 || rl_point-i > prompt_length) ?
-            rl_point-1 : i-1;
+        do {
+            rl_point = (i == 0 || rl_point-i > prompt_length) ? rl_point-1 : i-1;
+        } while (locale_is_utf8 && !isutf(rl_line_buffer[rl_point]) && rl_point > i-1);
     }
     return 0;
 }
 
 static int right_callback(int count, int key) {
     reset_indent();
-    rl_point += (rl_line_buffer[rl_point] == '\n') ? prompt_length+1 : 1;
+    do {
+        rl_point += (rl_line_buffer[rl_point] == '\n') ? prompt_length+1 : 1;
+    } while (locale_is_utf8 && !isutf(rl_line_buffer[rl_point]));
     if (rl_end < rl_point) rl_point = rl_end;
     return 0;
 }
