@@ -121,6 +121,7 @@ include("mmap.jl")
 include("version.jl")
 include("util.jl")
 include("datafmt.jl")
+include("deepcopy.jl")
 
 ## Load optional external libraries
 
@@ -129,6 +130,7 @@ include("build_h.jl")
 # linear algebra
 include("linalg.jl")
 include("linalg_dense.jl")
+include("linalg_specialized.jl")
 include("linalg_blas.jl")
 include("linalg_lapack.jl")
 include("factorizations.jl")
@@ -136,7 +138,6 @@ include("factorizations.jl")
 # signal processing
 include("DSP_fftw.jl")
 include("DSP.jl")
-import Base.DSP
 import Base.DSP.*
 
 # prime method cache with some things we know we'll need right after startup

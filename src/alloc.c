@@ -75,7 +75,7 @@ jl_sym_t *macro_sym;   jl_sym_t *method_sym;
 jl_sym_t *enter_sym;   jl_sym_t *leave_sym;
 jl_sym_t *exc_sym;     jl_sym_t *error_sym;
 jl_sym_t *static_typeof_sym;
-jl_sym_t *new_sym;     jl_sym_t *multivalue_sym;
+jl_sym_t *new_sym;
 jl_sym_t *const_sym;   jl_sym_t *thunk_sym;
 jl_sym_t *anonymous_sym;  jl_sym_t *underscore_sym;
 jl_sym_t *abstracttype_sym; jl_sym_t *bitstype_sym;
@@ -149,7 +149,7 @@ jl_value_t *jl_get_nth_field(jl_value_t *v, size_t i)
                        (char*)v + offs);
 }
 
-jl_value_t *jl_set_nth_field(jl_value_t *v, size_t i, jl_value_t *rhs)
+DLLEXPORT jl_value_t *jl_set_nth_field(jl_value_t *v, size_t i, jl_value_t *rhs)
 {
     jl_struct_type_t *st = (jl_struct_type_t*)jl_typeof(v);
     size_t offs = jl_field_offset(st,i) + sizeof(void*);
@@ -376,6 +376,11 @@ jl_sym_t *jl_symbol(const char *str)
     if (*pnode == NULL)
         *pnode = mk_symbol(str);
     return *pnode;
+}
+
+jl_sym_t *jl_symbol_lookup(const char *str)
+{
+    return *symtab_lookup(&symtab, str);
 }
 
 DLLEXPORT jl_sym_t *jl_symbol_n(const char *str, int32_t len)

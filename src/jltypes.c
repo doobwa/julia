@@ -80,6 +80,8 @@ int jl_has_typevars_(jl_value_t *v, int incl_wildcard)
             return incl_wildcard;
         return 1;
     }
+    if (jl_is_typector(v))
+        return incl_wildcard;
     jl_tuple_t *t;
     if (jl_is_union_type(v))
         t = ((jl_uniontype_t*)v)->types;
@@ -1384,7 +1386,7 @@ jl_value_t *jl_apply_type_(jl_value_t *tc, jl_value_t **params, size_t n)
         else {
             // NOTE: type checking deferred to inst_type_w_ to make sure
             // supertype parameters are checked recursively.
-            if (jl_is_typector(params[i]))
+            if (tc!=(jl_value_t*)jl_type_type && jl_is_typector(params[i]))
                 env[ne*2+1] = (jl_value_t*)((jl_typector_t*)params[i])->body;
             else
                 env[ne*2+1] = params[i];
@@ -1428,7 +1430,7 @@ void jl_set_t_uid_ctr(int i) { t_uid_ctr=i; }
 
 int jl_assign_type_uid(void)
 {
-    return t_uid_ctr++;
+    return int32hash(t_uid_ctr++);
 }
 
 static void cache_type_(jl_type_t *type)
@@ -1665,9 +1667,9 @@ jl_tag_type_t *jl_wrap_Type(jl_value_t *t)
 {
     jl_value_t *env[2];
     env[0] = jl_tparam0(jl_type_type);
-    if (jl_is_typector(t))
-        env[1] = (jl_value_t*)((jl_typector_t*)t)->body;
-    else
+    //if (jl_is_typector(t))
+    //    env[1] = (jl_value_t*)((jl_typector_t*)t)->body;
+    //else
         env[1] = t;
     return (jl_tag_type_t*)
         jl_instantiate_type_with((jl_type_t*)jl_type_type, env, 1);
@@ -2616,7 +2618,6 @@ void jl_init_types(void)
     leave_sym = jl_symbol("leave");
     static_typeof_sym = jl_symbol("static_typeof");
     new_sym = jl_symbol("new");
-    multivalue_sym = jl_symbol("multiple_value");
     const_sym = jl_symbol("const");
     global_sym = jl_symbol("global");
     thunk_sym = jl_symbol("thunk");

@@ -360,7 +360,7 @@ function findn_nzs{Tv,Ti}(S::SparseMatrixCSC{Tv,Ti})
     return (I, J, V)
 end
 
-function sprand_rng(m::Int, n::Int, density::Float, rng::Function)
+function sprand_rng(m::Int, n::Int, density::FloatingPoint, rng::Function)
     # TODO: Need to be able to generate int32 random integer arrays.
     # That will save extra memory utilization in the int32() calls.
     numnz = int(m*n*density)
@@ -372,8 +372,8 @@ function sprand_rng(m::Int, n::Int, density::Float, rng::Function)
     return S
 end
 
-sprand(m::Int, n::Int, density::Float)  = sprand_rng (m,n,density,rand)
-sprandn(m::Int, n::Int, density::Float) = sprand_rng (m,n,density,randn)
+sprand(m::Int, n::Int, density::FloatingPoint)  = sprand_rng (m,n,density,rand)
+sprandn(m::Int, n::Int, density::FloatingPoint) = sprand_rng (m,n,density,randn)
 #sprandi(m,n,density) = sprand_rng (m,n,density,randi)
 
 spones{T}(S::SparseMatrixCSC{T}) =
@@ -1022,49 +1022,4 @@ function assign(S::SparseAccumulator, v, i::Integer)
         end
     end
     return S
-end
-
-type Tridiagonal{T<:Float} <: AbstractMatrix{T}
-    a::Vector{T}   # sub-diagonal
-    b::Vector{T}   # diagonal
-    c::Vector{T}   # sup-diagonal
-    cp::Vector{T}  # scratch space, sup-diagonal
-    dp::Vector{T}  # scratch space, rhs
-
-    function Tridiagonal(N::Int)
-        cp = Array(T, N)
-        dp = Array(T, N)
-        new(cp, cp, cp, cp, dp)  # first three will be overwritten
-    end
-end
-function Tridiagonal{T}(a::Vector{T}, b::Vector{T}, c::Vector{T})
-    N = length(b)
-    if length(a) != N || length(c) != N
-        error("All three vectors must have the same length")
-    end
-    M = Tridiagonal{T}(N)
-    M.a = copy(a)
-    M.b = copy(b)
-    M.c = copy(c)
-    return M
-end
-size(M::Tridiagonal) = (length(M.b), length(M.b))
-function show(io, M::Tridiagonal)
-    println(io, summary(M), ":")
-    print_matrix(io, vcat((M.a)', (M.b)', (M.c)'))
-#    println(io, " sub: ", (M.a)')
-#    println(io, "diag: ", (M.b)')
-#    println(io, " sup: ", (M.c)')
-end
-full{T}(M::Tridiagonal{T}) = convert(Matrix{T}, M)
-function convert{T}(::Type{Matrix{T}}, M::Tridiagonal{T})
-    A = zeros(T, size(M))
-    for i = 1:length(M.b)
-        A[i,i] = M.b[i]
-    end
-    for i = 1:length(M.b)-1
-        A[i+1,i] = M.a[i+1]
-        A[i,i+1] = M.c[i]
-    end
-    return A
 end

@@ -13,7 +13,13 @@
 
 #include "htable.h"
 #include "arraylist.h"
+
 #include <setjmp.h>
+#if defined(__FreeBSD__)
+#  define jl_jmp_buf sigjmp_buf
+#else
+#  define jl_jmp_buf jmp_buf
+#endif
 
 // Check windows
 #if _WIN32 || _WIN64
@@ -345,7 +351,7 @@ extern jl_struct_type_t *jl_bits_kind;
 extern jl_type_t *jl_bottom_type;
 extern jl_value_t *jl_top_type;
 extern jl_struct_type_t *jl_lambda_info_type;
-extern jl_struct_type_t *jl_module_type;
+extern DLLEXPORT jl_struct_type_t *jl_module_type;
 extern jl_tag_type_t *jl_seq_type;
 extern jl_struct_type_t *jl_function_type;
 extern jl_tag_type_t *jl_abstractarray_type;
@@ -427,7 +433,6 @@ extern jl_sym_t *dots_sym;
 extern jl_sym_t *quote_sym;
 extern jl_sym_t *top_sym;
 extern jl_sym_t *line_sym;
-extern jl_sym_t *multivalue_sym;
 extern DLLEXPORT jl_sym_t *jl_continue_sym;
 extern jl_sym_t *error_sym;   extern jl_sym_t *amp_sym;
 extern jl_sym_t *module_sym;  extern jl_sym_t *colons_sym;
@@ -651,6 +656,7 @@ jl_tuple_t *jl_alloc_tuple_uninit(size_t n);
 jl_tuple_t *jl_tuple_append(jl_tuple_t *a, jl_tuple_t *b);
 jl_tuple_t *jl_tuple_fill(size_t n, jl_value_t *v);
 DLLEXPORT jl_sym_t *jl_symbol(const char *str);
+DLLEXPORT jl_sym_t *jl_symbol_lookup(const char *str);
 DLLEXPORT jl_sym_t *jl_symbol_n(const char *str, int32_t len);
 DLLEXPORT jl_sym_t *jl_gensym(void);
 DLLEXPORT jl_sym_t *jl_tagged_gensym(const char *str, int32_t len);
@@ -791,7 +797,7 @@ void jl_restore_system_image(char *fname);
 DLLEXPORT jl_value_t *jl_parse_input_line(const char *str);
 void jl_start_parsing_file(const char *fname);
 void jl_stop_parsing();
-jl_value_t *jl_parse_next(int *plineno);
+jl_value_t *jl_parse_next();
 DLLEXPORT void jl_load_file_string(const char *text);
 DLLEXPORT jl_value_t *jl_expand(jl_value_t *expr);
 jl_lambda_info_t *jl_wrap_expr(jl_value_t *expr);
@@ -812,7 +818,7 @@ extern DLLEXPORT jl_module_t *jl_main_module;
 extern DLLEXPORT jl_module_t *jl_current_module;
 jl_module_t *jl_new_module(jl_sym_t *name);
 // get binding for reading
-jl_binding_t *jl_get_binding(jl_module_t *m, jl_sym_t *var);
+DLLEXPORT jl_binding_t *jl_get_binding(jl_module_t *m, jl_sym_t *var);
 // get binding for assignment
 jl_binding_t *jl_get_binding_wr(jl_module_t *m, jl_sym_t *var);
 DLLEXPORT int jl_boundp(jl_module_t *m, jl_sym_t *var);
@@ -994,7 +1000,7 @@ typedef struct _jl_savestate_t {
     // eh_task is who I yield to for exception handling
     struct _jl_task_t *eh_task;
     // eh_ctx is where I go to handle an exception yielded to me
-    jmp_buf *eh_ctx;
+    jl_jmp_buf *eh_ctx;
     ptrint_t err : 1;
     ptrint_t bt : 1;  // whether exceptions caught here build a backtrace
 #ifdef JL_GC_MARKSWEEP
@@ -1008,12 +1014,12 @@ typedef struct _jl_task_t {
     struct _jl_task_t *on_exit;
     jl_value_t *tls;
     int8_t done;
-    jmp_buf ctx;
+    jl_jmp_buf ctx;
     union {
         void *stackbase;
         void *stack;
     };
-    jmp_buf base_ctx;
+    jl_jmp_buf base_ctx;
     size_t bufsz;
     void *stkbuf;
     size_t ssize;
@@ -1062,13 +1068,28 @@ static inline void jl_eh_restore_state(jl_savestate_t *ss)
     JL_SIGATOMIC_END();
 }
 
-DLLEXPORT void jl_enter_handler(jl_savestate_t *ss, jmp_buf *handlr);
+DLLEXPORT void jl_enter_handler(jl_savestate_t *ss, jl_jmp_buf *handlr);
 DLLEXPORT void jl_pop_handler(int n);
 
+#if defined(__WIN32__)
+#define jl_setjmp_f    _setjmp
+#define jl_setjmp(a,b) setjmp(a)
+#define jl_longjmp(a,b) longjmp(a,b)
+#else
+// determine actual entry point name
+#if defined(sigsetjmp)
+#define jl_setjmp_f    __sigsetjmp
+#else
+#define jl_setjmp_f    sigsetjmp
+#endif
+#define jl_setjmp(a,b) sigsetjmp(a,b)
+#define jl_longjmp(a,b) siglongjmp(a,b)
+#endif
+
 #define JL_TRY                                                          \
-    int i__tr, i__ca; jl_savestate_t __ss; jmp_buf __handlr;            \
+    int i__tr, i__ca; jl_savestate_t __ss; jl_jmp_buf __handlr;            \
     jl_enter_handler(&__ss, &__handlr);                                 \
-    if (!setjmp(__handlr))                                              \
+    if (!jl_setjmp(__handlr,1))                                         \
         for (i__tr=1; i__tr; i__tr=0, jl_eh_restore_state(&__ss))
 
 #define JL_EH_POP() jl_eh_restore_state(&__ss)
